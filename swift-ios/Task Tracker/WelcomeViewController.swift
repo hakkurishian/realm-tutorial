@@ -8,6 +8,7 @@
 
 import UIKit
 import RealmSwift
+import Combine
 
 // The WelcomeViewController handles login and account creation.
 class WelcomeViewController: UIViewController {
@@ -17,81 +18,104 @@ class WelcomeViewController: UIViewController {
     let signUpButton = UIButton(type: .roundedRect)
     let errorLabel = UILabel()
     let activityIndicator = UIActivityIndicatorView(style: .medium)
-
+    
     var email: String? {
         get {
             return emailField.text
         }
     }
-
+    
     var password: String? {
         get {
             return passwordField.text
         }
     }
-
+    
+    var subs = [AnyCancellable]()
+    
     override func viewDidLoad() {
         super.viewDidLoad();
         view.backgroundColor = .white
+        
+        if let user = app.currentUser() {
+            let partitionValue = "My Project"
+            
+            if let  loggedInUserId = user.identities().first?.identifier {
+            // if user is logged in, refresh custom data
+                user.refreshCustomData().replaceError(with: user.customData ?? Document.init()).sink { data in
+                print("refreshed user data - complete")
+            } receiveValue: { dataDocument in
+                print("refreshed user data: \(dataDocument) for \(loggedInUserId )")
+            }.store(in: &subs)
+            }
 
-        // Create a view that will automatically lay out the other controls.
-        let container = UIStackView();
-        container.translatesAutoresizingMaskIntoConstraints = false
-        container.axis = .vertical
-        container.alignment = .fill
-        container.spacing = 16.0;
-        view.addSubview(container)
-
-        // Configure the activity indicator.
-        activityIndicator.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(activityIndicator)
-
-        // Set the layout constraints of the container view and the activity indicator.
-        let guide = view.safeAreaLayoutGuide
-        NSLayoutConstraint.activate([
-            // This pins the container view to the top and stretches it to fill the parent
-            // view horizontally.
-            container.leadingAnchor.constraint(equalTo: guide.leadingAnchor, constant: 16),
-            container.trailingAnchor.constraint(equalTo: guide.trailingAnchor, constant: -16),
-            container.topAnchor.constraint(equalTo: guide.topAnchor, constant: 16),
-            // The activity indicator is centered over the rest of the view.
-            activityIndicator.centerYAnchor.constraint(equalTo: guide.centerYAnchor),
-            activityIndicator.centerXAnchor.constraint(equalTo: guide.centerXAnchor),
+            // Open a realm.
+            Realm.asyncOpen(configuration: user.configuration(partitionValue: partitionValue)) { [weak self](realm, error) in
+                guard let realm = realm else {
+                    fatalError("Failed to open realm: \(error!.localizedDescription)")
+                }
+                self!.navigationController!.pushViewController(TasksViewController(projectRealm: realm), animated: true);
+            }
+        } else {
+            
+            // Create a view that will automatically lay out the other controls.
+            let container = UIStackView();
+            container.translatesAutoresizingMaskIntoConstraints = false
+            container.axis = .vertical
+            container.alignment = .fill
+            container.spacing = 16.0;
+            view.addSubview(container)
+            
+            // Configure the activity indicator.
+            activityIndicator.translatesAutoresizingMaskIntoConstraints = false
+            view.addSubview(activityIndicator)
+            
+            // Set the layout constraints of the container view and the activity indicator.
+            let guide = view.safeAreaLayoutGuide
+            NSLayoutConstraint.activate([
+                // This pins the container view to the top and stretches it to fill the parent
+                // view horizontally.
+                container.leadingAnchor.constraint(equalTo: guide.leadingAnchor, constant: 16),
+                container.trailingAnchor.constraint(equalTo: guide.trailingAnchor, constant: -16),
+                container.topAnchor.constraint(equalTo: guide.topAnchor, constant: 16),
+                // The activity indicator is centered over the rest of the view.
+                activityIndicator.centerYAnchor.constraint(equalTo: guide.centerYAnchor),
+                activityIndicator.centerXAnchor.constraint(equalTo: guide.centerXAnchor),
             ])
-
-        // Add some text at the top of the view to explain what to do.
-        let infoLabel = UILabel()
-        infoLabel.numberOfLines = 0
-        infoLabel.text = "Please enter an email and password."
-        container.addArrangedSubview(infoLabel)
-
-        // Configure the email and password text input fields.
-        emailField.placeholder = "Email"
-        emailField.borderStyle = .roundedRect
-        emailField.autocapitalizationType = .none
-        emailField.autocorrectionType = .no
-        container.addArrangedSubview(emailField)
-
-        passwordField.placeholder = "Password"
-        passwordField.isSecureTextEntry = true
-        passwordField.borderStyle = .roundedRect
-        container.addArrangedSubview(passwordField)
-
-        // Configure the sign in and sign up buttons.
-        signInButton.setTitle("Sign In", for: .normal);
-        signInButton.addTarget(self, action: #selector(signIn), for: .touchUpInside)
-        container.addArrangedSubview(signInButton)
-
-        signUpButton.setTitle("Sign Up", for: .normal);
-        signUpButton.addTarget(self, action: #selector(signUp), for: .touchUpInside)
-        container.addArrangedSubview(signUpButton)
-
-        // Error messages will be set on the errorLabel.
-        errorLabel.numberOfLines = 0
-        errorLabel.textColor = .red
-        container.addArrangedSubview(errorLabel)
+            
+            // Add some text at the top of the view to explain what to do.
+            let infoLabel = UILabel()
+            infoLabel.numberOfLines = 0
+            infoLabel.text = "Please enter an email and password."
+            container.addArrangedSubview(infoLabel)
+            
+            // Configure the email and password text input fields.
+            emailField.placeholder = "Email"
+            emailField.borderStyle = .roundedRect
+            emailField.autocapitalizationType = .none
+            emailField.autocorrectionType = .no
+            container.addArrangedSubview(emailField)
+            
+            passwordField.placeholder = "Password"
+            passwordField.isSecureTextEntry = true
+            passwordField.borderStyle = .roundedRect
+            container.addArrangedSubview(passwordField)
+            
+            // Configure the sign in and sign up buttons.
+            signInButton.setTitle("Sign In", for: .normal);
+            signInButton.addTarget(self, action: #selector(signIn), for: .touchUpInside)
+            container.addArrangedSubview(signInButton)
+            
+            signUpButton.setTitle("Sign Up", for: .normal);
+            signUpButton.addTarget(self, action: #selector(signUp), for: .touchUpInside)
+            container.addArrangedSubview(signUpButton)
+            
+            // Error messages will be set on the errorLabel.
+            errorLabel.numberOfLines = 0
+            errorLabel.textColor = .red
+            container.addArrangedSubview(errorLabel)
+        }
     }
-
     // Turn on or off the activity indicator.
     func setLoading(_ loading: Bool) {
         if loading {
@@ -105,7 +129,7 @@ class WelcomeViewController: UIViewController {
         signInButton.isEnabled = !loading
         signUpButton.isEnabled = !loading
     }
-
+    
     @objc func signUp() {
         setLoading(true);
         app.emailPasswordAuth().registerUser(email: email!, password: password!) { [weak self](error) in
@@ -121,18 +145,18 @@ class WelcomeViewController: UIViewController {
                     return
                 }
                 print("Signup successful!")
-
+                
                 // Registering just registers. Now we need to sign in, but we can reuse the existing email and password.
                 self!.errorLabel.text = "Signup successful! Signing in..."
                 self!.signIn()
             }
         }
     }
-
+    
     @objc func signIn() {
         print("Log in as user: \(email!)");
         setLoading(true);
-
+        
         app.login(credentials: Credentials(email: email!, password: password!)) { [weak self](user, error) in
             // Completion handlers are not necessarily called on the UI thread.
             // This call to DispatchQueue.main.sync ensures that any changes to the UI,
@@ -146,13 +170,13 @@ class WelcomeViewController: UIViewController {
                     self!.errorLabel.text = "Login failed: \(error!.localizedDescription)"
                     return
                 }
-
+                
                 print("Login succeeded!");
-
+                
                 // Go directly to the Tasks page for the hardcoded project ID "My Project".
-                // This tutorial uses a common project to demonstrate sync.
+                // This tutorial uses a common project t®o demonstrate sync.
                 let partitionValue = "My Project"
-
+                
                 // Open a realm.
                 Realm.asyncOpen(configuration: user!.configuration(partitionValue: partitionValue)) { [weak self](realm, error) in
                     guard let realm = realm else {
